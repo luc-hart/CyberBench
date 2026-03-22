@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CyberBench Test Case Generator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/treeselectjs@0.13.1/dist/treeselectjs.css"/>
+    <style>
+        .brand-logo { padding-left: 15px; }
+        .container { margin-top: 30px; }
+        .generated-testcases { margin-top: 30px; }
+        .card { padding: 15px; margin-bottom: 15px; }
+        .tabs .tab a { font-size: 16px; }
+        .tabs .tab a.active { color: #0d47a1; }
+        .tabs .tab a:hover { color: #1565c0; }
+        .copy-container { display:flex; align-items:center; justify-content: space-between; margin-bottom:5px; }
+
+        /* Collapsible container for mutations */
+        .mutations-container { margin-top:10px; }
+        .mutation-block { display:none; margin-left: 20px; margin-bottom:5px; }
+
+        /* Spinner overlay */
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 2000;
+        }
+        #loading-overlay .preloader-wrapper {
+            width: 70px;
+            height: 70px;
+        }
+    </style>
+</head>
+<body>
+<nav class="nav-extended blue">
+    <div class="nav-wrapper">
+        <a href="#" class="brand-logo">CyberBench</a>
+        <a href="#" data-target="mobile-demo" class="sidenav-trigger"><i class="material-icons">menu</i></a>
+        <ul id="nav-mobile" class="right hide-on-med-and-down">
+            <li><a href="generator">Generator</a></li>
+            <li class="active"><a href="executor">Executor</a></li>
+            <li><a href="evaluator">Evaluator</a></li>
+            <li><a href="dashboard">Dashboard</a></li>
+        </ul>
+    </div>
+    <div class="nav-content">
+        <ul class="tabs tabs-transparent">
+            <li class="tab"><a class="{{ 'active' if current_mode=='api' else '' }}" href="#api_tab"
+                               data-mode="api">API</a></li>
+        </ul>
+    </div>
+</nav>
+<ul class="sidenav" id="mobile-demo">
+    <li><a href="generator">Generator</a></li>
+    <li class="active"><a href="executor">Executor</a></li>
+    <li><a href="evaluator">Evaluator</a></li>
+</ul>
+
+<div class="container">
+    <form method="POST" id="generatorForm" enctype="multipart/form-data">
+        <input type="radio" name="mode" value="api" id="mode_api" style="display:none" {% if current_mode=='api'
+               %}checked{% endif %}>
+
+        <!-- API tab -->
+        <div id="api_tab">
+            <h5>Test Case Executor (through API)</h5>
+            <label>Target</label>
+            <div class="input-field">
+                <input type="text" autocomplete="on" name="api_url" value="{{ request.form.api_url }}" placeholder="API URL (https://...)">
+            </div>
+
+            <!-- Dynamic Headers -->
+            <div>
+                <label>Headers</label>
+                <div id="headers-container"></div>
+                <button type="button" class="btn-small" id="add-header-btn">Add Header</button>
+            </div>
+
+            <br>
+
+            <!-- Dynamic Model Parameters -->
+            <div>
+                <label>Model Parameters</label>
+                <div id="model-params-container"></div>
+                <button type="button" class="btn-small" id="add-param-btn">Add Parameter</button>
+            </div>
+
+            <br>
+            <div>
+                <label>Testcases</label>
+                <div class="file-field input-field">
+                    <div class="btn">
+                        <span>Upload Testcases</span>
+                        <input type="file" name="testcase_file">
+                    </div>
+                    <div class="file-path-wrapper">
+                        <input class="file-path validate" type="text" placeholder="Upload testcases (JSON or YAML)">
+                    </div>
+                </div>
+            </div>
+            <br>
+            <div>
+                <label>Threads</label>
+            </div>
+            <input type="number" name="threads" value="{{ request.form.threads or 1 }}" placeholder="Threads" min="1"
+                   class="input-field">
+        </div>
+
+        <br>
+        <button class="btn waves-effect waves-light" type="submit">Execute</button>
+    </form>
+
+    <div class="generated-testcases">
+        <div style="display:flex; justify-content: space-between; align-items: center;">
+            <h5>Executed Test Cases</h5>
+            {% if file_path %}
+            <a class="btn-small blue" href="/download?filepath={{ file_path }}">
+                <i class="material-icons">file_download</i>
+            </a>
+            {% endif %}
+        </div>
+
+        {% if test_cases %}
+        {% for tc in test_cases %}
+        <div class="card blue lighten-5">
+            <div class="card-content">
+                <span class="card-title">Test Case #{{ tc.id + 1 }}</span>
+                <br>
+                <p><strong>Categories</strong></p>
+                <br>
+                <div>
+                    {% for cat in tc.categories %}
+                    <div class="chip">{{ cat | join(" → ") if cat is iterable and not cat is string else cat }}</div>
+                    {% endfor %}
+                </div>
+                <br>
+                <p><strong>Prompt Injection Strategies</strong></p>
+                <br>
+                <div>
+                    {% for strat in tc.applied_strategies %}
+                    <div class="chip">{{ strat }}</div>
+                    {% endfor %}
+                </div>
+                <br>
+                <p><strong>Prompt</strong></p>
+                <div class="copy-container">
+                    <blockquote id="baseprompt-{{ tc.id }}">{{ tc.testcase }}</blockquote>
+                    <button class="btn-small blue copy-btn" data-target="baseprompt-{{ tc.id }}">
+                        <i class="material-icons">content_copy</i>
+                    </button>
+                </div>
+                <br>
+                <p><strong>Response</strong></p>
+                <div class="copy-container">
+                    <blockquote id="testcase-{{ tc.id }}">{{ tc.response }}</blockquote>
+                    <button class="btn-small blue copy-btn" data-target="testcase-{{ tc.id }}">
+                        <i class="material-icons">content_copy</i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p>No test cases executed yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Spinner Overlay -->
+<div id="loading-overlay">
+    <div class="preloader-wrapper big active">
+        <div class="spinner-layer spinner-blue-only">
+            <div class="circle-clipper left">
+                <div class="circle"></div>
+            </div>
+            <div class="gap-patch">
+                <div class="circle"></div>
+            </div>
+            <div class="circle-clipper right">
+                <div class="circle"></div>
+            </div>
+        </div>
+    </div>
+    <p style="margin-top:20px;font-weight:bold;color:#0d47a1;">Executing test cases... This may take some time.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/treeselectjs@0.13.1/dist/treeselectjs.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    M.Tabs.init(document.querySelectorAll('.tabs'));
+    M.Sidenav.init(document.querySelectorAll('.sidenav'));
+
+    const apiDiv = document.getElementById('api_tab');
+    const radios = document.querySelectorAll('input[name="mode"]');
+    const overlay = document.getElementById('loading-overlay');
+    const form = document.getElementById('generatorForm');
+
+    function showMode(mode) {
+        apiDiv.style.display = (mode === 'api') ? 'block' : 'none';
+        radios.forEach(r => r.checked = (r.value === mode));
+    }
+    radios.forEach(r => { if (r.checked) showMode(r.value); });
+    document.querySelectorAll('.tabs a').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.getAttribute('data-mode');
+            if (mode) showMode(mode);
+        });
+    });
+    document.querySelectorAll('.sidenav a').forEach(link => {
+        link.addEventListener('click', () => {
+            const mode = link.getAttribute('data-mode');
+            if (mode) showMode(mode);
+        });
+    });
+
+    // Spinner overlay
+    form.addEventListener('submit', function() {
+        overlay.style.display = 'flex';
+    });
+
+    // -------------------------
+    // Dynamic headers logic
+    // -------------------------
+    const headersContainer = document.getElementById('headers-container');
+    const addHeaderBtn = document.getElementById('add-header-btn');
+
+    function addHeaderRow(key = '', value = '') {
+        const row = document.createElement('div');
+        row.classList.add('header-row', 'input-field');
+        row.style.display = 'flex';
+        row.style.gap = '10px';
+        row.style.alignItems = 'center';
+        row.innerHTML = `
+            <input autocomplete="on" name='header-key' type="text" class="header-key" placeholder="Header Key" value="${key}">
+            <input autocomplete="on" name='header-value' type="text" class="header-value" placeholder="Header Value" value="${value}">
+            <button type="button" class="btn-small red remove-header-btn"><i class="material-icons">close</i></button>
+        `;
+        headersContainer.appendChild(row);
+
+        row.querySelector('.remove-header-btn').addEventListener('click', () => {
+            headersContainer.removeChild(row);
+        });
+    }
+    addHeaderBtn.addEventListener('click', () => addHeaderRow());
+    {% if request.form.headers %}
+        const existingHeaders = {{ request.form.headers | safe }};
+        for (const [k, v] of Object.entries(existingHeaders)) {
+            addHeaderRow(k, v);
+        }
+    {% endif %}
+    addHeaderRow();
+
+    form.addEventListener('submit', function(e) {
+        const headers = {};
+        headersContainer.querySelectorAll('.header-row').forEach(row => {
+            const key = row.querySelector('.header-key').value.trim();
+            const value = row.querySelector('.header-value').value.trim();
+            if (key) headers[key] = value;
+        });
+
+        let hiddenInput = document.getElementById('headers-json-input');
+        if (!hiddenInput) {
+            hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'headers';
+            hiddenInput.id = 'headers-json-input';
+            form.appendChild(hiddenInput);
+        }
+        hiddenInput.value = JSON.stringify(headers);
+    });
+
+    // -------------------------
+    // Dynamic model parameters logic
+    // -------------------------
+    const paramsContainer = document.getElementById('model-params-container');
+    const addParamBtn = document.getElementById('add-param-btn');
+
+    function addParamRow(key = '', value = '') {
+        const row = document.createElement('div');
+        row.classList.add('param-row', 'input-field');
+        row.style.display = 'flex';
+        row.style.gap = '10px';
+        row.style.alignItems = 'center';
+        row.innerHTML = `
+            <input autocomplete="on" name='param-key' type="text" class="param-key" placeholder="Parameter Key" value="${key}">
+            <input autocomplete="on" name='param-value' type="text" class="param-value" placeholder="Parameter Value" value="${value}">
+            <button type="button" class="btn-small red remove-param-btn"><i class="material-icons">close</i></button>
+        `;
+        paramsContainer.appendChild(row);
+
+        row.querySelector('.remove-param-btn').addEventListener('click', () => {
+            paramsContainer.removeChild(row);
+        });
+    }
+    addParamBtn.addEventListener('click', () => addParamRow());
+    {% if request.form.model_params %}
+        const existingParams = {{ request.form.model_params | safe }};
+        for (const [k, v] of Object.entries(existingParams)) {
+            addParamRow(k, v);
+        }
+    {% endif %}
+    addParamRow();
+
+    form.addEventListener('submit', function(e) {
+        const params = {};
+        paramsContainer.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) params[key] = value;
+        });
+
+        let hiddenInput = document.getElementById('params-json-input');
+        if (!hiddenInput) {
+            hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'model_params';
+            hiddenInput.id = 'params-json-input';
+            form.appendChild(hiddenInput);
+        }
+        hiddenInput.value = JSON.stringify(params);
+    });
+
+    // Copy-to-clipboard buttons
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-target');
+            const text = document.getElementById(targetId).innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                M.toast({html: 'Copied to clipboard!', displayLength: 1500});
+            });
+        });
+    });
+
+    // Toggle collapsible mutations
+    document.querySelectorAll('.toggle-mutations').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-target');
+            const container = document.getElementById(targetId);
+            const isOpen = container.getAttribute('data-open') === 'true';
+            container.querySelectorAll('.mutation-block').forEach(m => {
+                m.style.display = isOpen ? 'none' : 'flex';
+            });
+            container.setAttribute('data-open', isOpen ? 'false' : 'true');
+            btn.querySelector('i').textContent = isOpen ? 'expand_more' : 'expand_less';
+        });
+    });
+});
+</script>
+</body>
+</html>

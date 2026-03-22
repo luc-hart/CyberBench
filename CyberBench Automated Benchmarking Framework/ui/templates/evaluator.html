@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CyberBench Test Case Generator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/treeselectjs@0.13.1/dist/treeselectjs.css"/>
+    <style>
+        .brand-logo { padding-left: 15px; }
+        .container { margin-top: 30px; }
+        .generated-testcases { margin-top: 30px; }
+        .card { padding: 15px; margin-bottom: 15px; }
+        .tabs .tab a { font-size: 16px; }
+        .tabs .tab a.active { color: #0d47a1; }
+        .tabs .tab a:hover { color: #1565c0; }
+        .copy-container { display:flex; align-items:center; justify-content: space-between; margin-bottom:5px; }
+        .mutations-container { margin-top:10px; }
+        .mutation-block { display:none; margin-left: 20px; margin-bottom:5px; }
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 2000;
+        }
+        #loading-overlay .preloader-wrapper { width: 70px; height: 70px; }
+    </style>
+</head>
+<body>
+<nav class="nav-extended blue">
+    <div class="nav-wrapper">
+        <a href="#" class="brand-logo">CyberBench</a>
+        <a href="#" data-target="mobile-demo" class="sidenav-trigger"><i class="material-icons">menu</i></a>
+        <ul id="nav-mobile" class="right hide-on-med-and-down">
+            <li><a href="generator">Generator</a></li>
+            <li><a href="executor">Executor</a></li>
+            <li class="active"><a href="evaluator">Evaluator</a></li>
+            <li><a href="dashboard">Dashboard</a></li>
+        </ul>
+    </div>
+    <div class="nav-content">
+        <ul class="tabs tabs-transparent">
+            <li class="tab"><a class="{{ 'active' if current_mode=='regex' else '' }}" href="#regex_tab"
+                               data-mode="regex">Regex</a></li>
+            <li class="tab"><a class="{{ 'active' if current_mode=='llm' else '' }}" href="#llm_tab"
+                               data-mode="llm">LLM Judge</a></li>
+        </ul>
+    </div>
+</nav>
+<ul class="sidenav" id="mobile-demo">
+    <li><a href="generator">Generator</a></li>
+    <li><a href="executor">Executor</a></li>
+    <li class="active"><a href="evaluator">Evaluator</a></li>
+    <li><a href="dashboard">Dashboard</a></li>
+
+</ul>
+
+<div class="container">
+    <form method="POST" id="evaluatorForm" enctype="multipart/form-data">
+        <input type="radio" name="mode" value="regex" id="mode_regex" style="display:none" {% if current_mode=='regex' %}checked{% endif %}>
+        <input type="radio" name="mode" value="llm" id="mode_llm" style="display:none" {% if current_mode=='llm' %}checked{% endif %}>
+
+        <!-- Regex tab -->
+        <div id="regex_tab">
+            <h5>Evaluator (Regex-based)</h5>
+            <label>Regex</label>
+            <div class="input-field">
+                <input type="text" autocomplete="on" name="regex" value="{{ request.form.regex }}" placeholder="regex">
+            </div>
+
+            <div>
+                <label>Testcases</label>
+                <div class="file-field input-field">
+                    <div class="btn">
+                        <span>Upload Testcases</span>
+                        <input type="file" name="testcase_file_regex">
+                    </div>
+                    <div class="file-path-wrapper">
+                        <input class="file-path validate" type="text" placeholder="Upload testcases (JSON or YAML)">
+                    </div>
+                </div>
+            </div>
+            <br>
+            <div>
+                <label>Threads</label>
+            </div>
+            <input type="number" name="threads" value="{{ request.form.threads or 1 }}" placeholder="Threads" min="1"
+                   class="input-field">
+        </div>
+
+        <div id="llm_tab">
+            <h5>Evaluator (LLM-based)</h5>
+            <div>
+                <label>Testcases</label>
+                <div class="file-field input-field">
+                    <div class="btn">
+                        <span>Upload Testcases</span>
+                        <input type="file" name="testcase_file_llm">
+                    </div>
+                    <div class="file-path-wrapper">
+                        <input class="file-path validate" type="text" placeholder="Upload testcases (JSON or YAML)">
+                    </div>
+                </div>
+            </div>
+            <br>
+            <div>
+                <label>Batch size</label>
+            </div>
+            <input type="number" name="batch_size" value="{{ request.form.threads or 25 }}" placeholder="Batch Size" min="1"
+                   class="input-field">
+        </div>
+
+        <br>
+        <button class="btn waves-effect waves-light" type="submit">Evaluate</button>
+    </form>
+
+    <div class="generated-testcases">
+        <div style="display:flex; justify-content: space-between; align-items: center;">
+            <h5>Evaluated Test Cases</h5>
+            {% if file_path %}
+            <a class="btn-small blue" href="/download?filepath={{ file_path }}">
+                <i class="material-icons">file_download</i>
+            </a>
+            {% endif %}
+        </div>
+
+        {% if test_cases %}
+        <!-- Statistics card -->
+        <div class="card blue lighten-5">
+            <div class="card-content">
+                {% set total = test_cases|length %}
+                {% set safe = test_cases|selectattr('evaluation','equalto',0)|list|length %}
+                {% set partial = test_cases|selectattr('evaluation','equalto',0.5)|list|length %}
+                {% set threats = total - safe - partial %}
+                {% set attack_success_rate = ((partial*0.5 + threats) / total * 100) if total > 0 else 0 %}
+                <h6>Statistics</h6>
+                <p><strong>Total test cases:</strong> {{ total }}</p>
+                <p><strong>Safe:</strong> {{ safe }}</p>
+                <p><strong>Partial Security Threats:</strong> {{ partial }}</p>
+                <p><strong>Security Threats:</strong> {{ threats }}</p>
+                <p><strong>Attack Success Rate:</strong> {{ '%.2f'|format(attack_success_rate) }}%</p>
+            </div>
+        </div>
+
+        <!-- Sort select -->
+        <div style="margin: 15px 0;">
+            <label>Sort by:</label>
+            <select id="sort-select" class="browser-default" style="width: 200px;">
+                <option value="default">Test Case Number</option>
+                <option value="evaluation">Evaluation</option>
+            </select>
+        </div>
+
+        <div id="testcases-container">
+        {% for tc in test_cases %}
+        <div class="card blue lighten-5" data-evaluation="{{ tc.evaluation }}">
+            <div class="card-content">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="card-title">Test Case #{{ loop.index }}</span>
+                    <span class="card-title" style="display: flex; align-items: center; gap: 4px;">
+                        {% if tc.evaluation == 0 %}
+                        <i class="large material-icons" style="color: green;">check</i>
+                        No Security Threat Detected
+                        {% elif tc.evaluation == 0.5 %}
+                        <i class="large material-icons" style="color: orange;">warning</i>
+                        Partial Security Threat Detected
+                        {% else %}
+                        <i class="large material-icons" style="color: red;">error</i>
+                        Security Threat Detected
+                        {% endif %}
+                    </span>
+                </div>
+
+                <br>
+                <p><strong>Categories</strong></p>
+                <br>
+                <div>
+                    {% for cat in tc.categories %}
+                    <div class="chip">{{ cat | join(" → ") if cat is iterable and not cat is string else cat }}</div>
+                    {% endfor %}
+                </div>
+                <br>
+                <p><strong>Prompt Injection Strategies</strong></p>
+                <br>
+                <div>
+                    {% for strat in tc.applied_strategies %}
+                    <div class="chip">{{ strat }}</div>
+                    {% endfor %}
+                </div>
+                <br>
+                <p><strong>Prompt</strong></p>
+                <div class="copy-container">
+                    <blockquote id="baseprompt-{{ tc.id }}">{{ tc.testcase }}</blockquote>
+                    <button class="btn-small blue copy-btn" data-target="baseprompt-{{ tc.id }}">
+                        <i class="material-icons">content_copy</i>
+                    </button>
+                </div>
+                <br>
+                <p><strong>Response</strong></p>
+                <div class="copy-container">
+                    <blockquote id="testcase-{{ tc.id }}">{{ tc.response }}</blockquote>
+                    <button class="btn-small blue copy-btn" data-target="testcase-{{ tc.id }}">
+                        <i class="material-icons">content_copy</i>
+                    </button>
+                </div>
+                <br>
+                <p><strong>Evaluation</strong></p>
+                <div class="copy-container">
+                    <blockquote id="evaluation-{{ tc.id }}">{{ tc.evaluation }}</blockquote>
+                    <button class="btn-small blue copy-btn" data-target="evaluation-{{ tc.id }}">
+                        <i class="material-icons">content_copy</i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        </div>
+        {% else %}
+        <p>No test cases evaluated yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Spinner Overlay -->
+<div id="loading-overlay">
+    <div class="preloader-wrapper big active">
+        <div class="spinner-layer spinner-blue-only">
+            <div class="circle-clipper left">
+                <div class="circle"></div>
+            </div>
+            <div class="gap-patch">
+                <div class="circle"></div>
+            </div>
+            <div class="circle-clipper right">
+                <div class="circle"></div>
+            </div>
+        </div>
+    </div>
+    <p style="margin-top:20px;font-weight:bold;color:#0d47a1;">Evaluating test cases... This may take some time.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/treeselectjs@0.13.1/dist/treeselectjs.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    M.Tabs.init(document.querySelectorAll('.tabs'));
+    M.Sidenav.init(document.querySelectorAll('.sidenav'));
+
+    const regexDiv = document.getElementById('regex_tab');
+    const llmDiv = document.getElementById('llm_tab');
+    const radios = document.querySelectorAll('input[name="mode"]');
+    const overlay = document.getElementById('loading-overlay');
+    const form = document.getElementById('evaluatorForm');
+
+    function showMode(mode) {
+        regexDiv.style.display = (mode==='regex')?'block':'none';
+        llmDiv.style.display = (mode==='llm')?'block':'none';
+        radios.forEach(r=>r.checked=(r.value===mode));
+    }
+
+    radios.forEach(r => { if (r.checked) showMode(r.value); });
+    document.querySelectorAll('.tabs a').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.getAttribute('data-mode');
+            alert(mode);
+            if (mode) showMode(mode);
+        });
+    });
+
+    form.addEventListener('submit', function() {
+        overlay.style.display = 'flex';
+    });
+
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-target');
+            const text = document.getElementById(targetId).innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                M.toast({html: 'Copied to clipboard!', displayLength: 1500});
+            });
+        });
+    });
+
+    // Sort functionality
+    const sortSelect = document.getElementById('sort-select');
+    const testcasesContainer = document.getElementById('testcases-container');
+
+    if(sortSelect && testcasesContainer){
+        sortSelect.addEventListener('change', () => {
+            const cards = Array.from(testcasesContainer.children);
+            if(sortSelect.value === 'evaluation'){
+                cards.sort((a,b) => parseFloat(b.dataset.evaluation) - parseFloat(a.dataset.evaluation));
+            } else {
+                cards.sort((a,b) => a.dataset.originalIndex - b.dataset.originalIndex);
+            }
+            cards.forEach(c => testcasesContainer.appendChild(c));
+        });
+
+        Array.from(testcasesContainer.children).forEach((c,i) => c.dataset.originalIndex = i);
+    }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CyberBench Test Case Generator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/treeselectjs@0.13.1/dist/treeselectjs.css"/>
+    <style>
+        .brand-logo { padding-left: 15px; }
+        .container { margin-top: 30px; }
+        .generated-testcases { margin-top: 30px; }
+        .card { padding: 15px; margin-bottom: 15px; }
+        .tabs .tab a { font-size: 16px; }
+        .tabs .tab a.active { color: #0d47a1; }
+        .tabs .tab a:hover { color: #1565c0; }
+        .copy-container { display:flex; align-items:center; justify-content: space-between; margin-bottom:5px; }
+        .mutations-container { margin-top:10px; }
+        .mutation-block { display:none; margin-left: 20px; margin-bottom:5px; }
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 2000;
+        }
+        #loading-overlay .preloader-wrapper { width: 70px; height: 70px; }
+    </style>
+</head>
+<body>
+<nav class="nav-extended blue">
+    <div class="nav-wrapper">
+        <a href="#" class="brand-logo">CyberBench</a>
+        <a href="#" data-target="mobile-demo" class="sidenav-trigger"><i class="material-icons">menu</i></a>
+        <ul id="nav-mobile" class="right hide-on-med-and-down">
+            <li class="active"><a href="generator">Generator</a></li>
+            <li><a href="executor">Executor</a></li>
+            <li><a href="evaluator">Evaluator</a></li>
+            <li><a href="dashboard">Dashboard</a></li>
+        </ul>
+    </div>
+    <div class="nav-content">
+        <ul class="tabs tabs-transparent">
+            <li class="tab"><a class="{{ 'active' if current_mode=='manual' else '' }}" href="#manual_tab" data-mode="manual">Manual</a></li>
+            <li class="tab"><a class="{{ 'active' if current_mode=='automatic' else '' }}" href="#automatic_tab" data-mode="automatic">Automatic</a></li>
+            <li class="tab"><a class="{{ 'active' if current_mode=='smart' else '' }}" href="#smart_tab" data-mode="smart">Smart</a></li>
+        </ul>
+    </div>
+</nav>
+<ul class="sidenav" id="mobile-demo">
+    <li class="active"><a href="generator">Generator</a></li>
+    <li><a href="executor">Executor</a></li>
+    <li><a href="evaluator">Evaluator</a></li>
+    <li><a href="dashboard">Dashboard</a></li>
+</ul>
+
+<div class="container">
+    <form method="POST" id="generatorForm">
+        <input type="radio" name="mode" value="manual" id="mode_manual" style="display:none" {% if current_mode=='manual' %}checked{% endif %}>
+        <input type="radio" name="mode" value="automatic" id="mode_auto" style="display:none" {% if current_mode=='automatic' %}checked{% endif %}>
+        <input type="radio" name="mode" value="smart" id="mode_smart" style="display:none" {% if current_mode=='smart' %}checked{% endif %}>
+
+        <!-- Manual tab -->
+        <div id="manual_tab">
+            <h5>Manual Generator</h5>
+            <div class="input-field">
+                <textarea name="manual_prompt" class="materialize-textarea" placeholder="Prompt text">{{ request.form.manual_prompt }}</textarea>
+            </div>
+            <div class="input-field">
+                <input type="text" name="manual_goal" placeholder="Prompt goal" value="{{ request.form.manual_goal }}">
+            </div>
+            <div class="input-field">
+                <input type="text" name="manual_object" placeholder="Prompt object" value="{{ request.form.manual_object }}">
+            </div>
+            <label>Prompt Injection Strategies</label>
+            <div id="manual-treeselect-strategies-container"></div>
+            <input type="hidden" name="manual_strategies" id="manual_strategies_json" value='{{ request.form.get("manual_strategies", "[]") }}'>
+            <label>Sample size</label>
+            <input type="number" name="manual_sample_size" value="{{ request.form.manual_sample_size or 1 }}" min="1" class="input-field">
+        </div>
+
+        <!-- Automatic tab -->
+        <div id="automatic_tab">
+            <h5>Automatic Generator</h5>
+            <label>Benchmarks</label>
+            <div id="treeselect-container"></div>
+            <input type="hidden" name="auto_category_json" id="auto_category_json" value='{{ request.form.get("auto_category_json", "[]") }}'>
+            <label>Prompt Injection Strategies</label>
+            <div id="auto-treeselect-strategies-container"></div>
+            <input type="hidden" name="auto_strategies" id="auto_strategies_json" value='{{ request.form.get("auto_strategies", "[]") }}'>
+            <label>Test cases per category</label>
+            <input type="number" name="auto_count" value="{{ request.form.auto_count or 1 }}" min="1" class="input-field">
+        </div>
+
+        <!-- Smart tab -->
+        <div id="smart_tab">
+            <h5>Smart Generator</h5>
+            <div class="input-field">
+                <input type="text" name="smart_context" placeholder="Target System Description" value="{{ request.form.smart_context }}">
+            </div>
+            <div class="input-field">
+                <textarea name="smart_objective" class="materialize-textarea" placeholder="Objective/Goal of Assessment">{{ request.form.smart_objective }}</textarea>
+            </div>
+            <label>Amount of test cases</label>
+            <input type="number" name="smart_sample_size" value="{{ request.form.smart_sample_size or 1 }}" min="1" class="input-field">
+        </div>
+
+        <br>
+        <button class="btn waves-effect waves-light" type="submit">Generate</button>
+    </form>
+
+<div class="generated-testcases">
+    <div style="display:flex; justify-content: space-between; align-items: center;">
+        <h5>Generated Test Cases</h5>
+        {% if file_path %}
+        <a class="btn-small blue" href="/download?filepath={{ file_path }}">
+            <i class="material-icons">file_download</i>
+        </a>
+        {% endif %}
+    </div>
+
+        {% if test_cases %}
+        {% for tc in test_cases %}
+        <div class="card blue lighten-5">
+            <div class="card-content">
+                <span class="card-title">Test Case #{{ tc.id + 1 }}</span>
+                <br>
+                <p><strong>Base Prompt</strong></p>
+                <div class="copy-container">
+                    <blockquote id="baseprompt-{{ tc.id }}">{{ tc.base_prompt }}</blockquote>
+                    <button class="btn-small blue copy-btn" data-target="baseprompt-{{ tc.id }}">
+                        <i class="material-icons">content_copy</i>
+                    </button>
+                </div>
+                <br>
+                <p><strong>Categories</strong></p>
+                <br>
+                <div>
+                    {% for cat in tc.categories %}
+                        <div class="chip">{{ cat | join(" → ") if cat is iterable and not cat is string else cat }}</div>
+                    {% endfor %}
+                </div>
+                <br>
+                <p><strong>Prompt Injection Strategies</strong></p>
+                <br>
+                <div>
+                    {% for strat in tc.applied_strategies %}
+                        <div class="chip">{{ strat }}</div>
+                    {% endfor %}
+                </div>
+                <br>
+                <p><strong>Generated Testcase</strong></p>
+                <div class="copy-container">
+                    <blockquote id="testcase-{{ tc.id }}">{{ tc.testcase }}</blockquote>
+                    <button class="btn-small blue copy-btn" data-target="testcase-{{ tc.id }}">
+                        <i class="material-icons">content_copy</i>
+                    </button>
+                </div>
+                <br>
+                <p><strong>Testcase Mutations</strong>
+                    <a href="#!" class="toggle-mutations" data-target="mutations-{{ tc.id }}">
+                        <i class="material-icons">expand_more</i>
+                    </a>
+                </p>
+                <div class="mutations-container" id="mutations-{{ tc.id }}">
+                    {% for mutation in tc.mutated_testcases %}
+                        <div class="copy-container mutation-block">
+                            <blockquote id="mutation-{{ tc.id }}-{{ loop.index0 }}">{{ mutation }}</blockquote>
+                            <button class="btn-small blue copy-btn" data-target="mutation-{{ tc.id }}-{{ loop.index0 }}">
+                                <i class="material-icons">content_copy</i>
+                            </button>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p>No test cases generated yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div id="loading-overlay">
+    <div class="preloader-wrapper big active">
+        <div class="spinner-layer spinner-blue-only">
+            <div class="circle-clipper left"><div class="circle"></div></div>
+            <div class="gap-patch"><div class="circle"></div></div>
+            <div class="circle-clipper right"><div class="circle"></div></div>
+        </div>
+    </div>
+    <p style="margin-top:20px;font-weight:bold;color:#0d47a1;">Generating test cases... This may take up to one minute.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/treeselectjs@0.13.1/dist/treeselectjs.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    M.Tabs.init(document.querySelectorAll('.tabs'));
+    M.Sidenav.init(document.querySelectorAll('.sidenav'));
+    const manualDiv = document.getElementById('manual_tab');
+    const autoDiv = document.getElementById('automatic_tab');
+    const smartDiv = document.getElementById('smart_tab');
+    const radios = document.querySelectorAll('input[name="mode"]');
+    const overlay = document.getElementById('loading-overlay');
+    const form = document.getElementById('generatorForm');
+
+    function showMode(mode) {
+        manualDiv.style.display = (mode==='manual')?'block':'none';
+        autoDiv.style.display = (mode==='automatic')?'block':'none';
+        smartDiv.style.display = (mode==='smart')?'block':'none';
+        radios.forEach(r=>r.checked=(r.value===mode));
+    }
+    radios.forEach(r => { if(r.checked) showMode(r.value); });
+    document.querySelectorAll('.tabs a').forEach(tab => { tab.addEventListener('click',()=>showMode(tab.getAttribute('data-mode'))); });
+    document.querySelectorAll('.sidenav a').forEach(link => { link.addEventListener('click',()=>showMode(link.getAttribute('data-mode'))); });
+
+    form.addEventListener('submit',()=>overlay.style.display='flex');
+    document.querySelectorAll('.copy-btn').forEach(btn=>btn.addEventListener('click',()=>{
+        const text=document.getElementById(btn.getAttribute('data-target')).innerText;
+        navigator.clipboard.writeText(text).then(()=>M.toast({html:'Copied to clipboard!',displayLength:1500}));
+    }));
+
+    document.querySelectorAll('.toggle-mutations').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            const container=document.getElementById(btn.getAttribute('data-target'));
+            const isOpen=container.getAttribute('data-open')==='true';
+            container.querySelectorAll('.mutation-block').forEach(m=>m.style.display=isOpen?'none':'flex');
+            container.setAttribute('data-open',isOpen?'false':'true');
+            btn.querySelector('i').textContent=isOpen?'expand_more':'expand_less';
+        });
+    });
+
+    const options={{ treeselect_options|tojson }};
+    const treeselect=new Treeselect({parentHtmlContainer:document.getElementById('treeselect-container'),options:options,showTags:true,searchable:true,clearable:true,isGroupSelectable:true});
+    treeselect.srcElement.addEventListener('input',e=>document.getElementById('auto_category_json').value=JSON.stringify(e.detail));
+
+    const strategyOptions={{ strategy_options|tojson }};
+    function initStrategyTreeselect(containerId, hiddenInputId){
+        const ts=new Treeselect({parentHtmlContainer:document.getElementById(containerId),options:strategyOptions,showTags:true,searchable:true,clearable:true,isGroupSelectable:true});
+        ts.srcElement.addEventListener('input',e=>document.getElementById(hiddenInputId).value=JSON.stringify(e.detail));
+    }
+    initStrategyTreeselect('manual-treeselect-strategies-container','manual_strategies_json');
+    initStrategyTreeselect('auto-treeselect-strategies-container','auto_strategies_json');
+});
+</script>
+</body>
+</html>
