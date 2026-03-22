@@ -1,6 +1,6 @@
 # CyberBench
 
-**CyberBench** is a research artifact accompanying an MSc thesis on the automated benchmarking of **direct security risks in LLM-based systems**.  
+**CyberBench** is a research artifact accompanying an MSc [thesis](https://purl.utwente.nl/essays/109239) on the automated benchmarking of **direct security risks in LLM-based systems**.  
 It provides a **risk taxonomy**, a **static benchmark dataset**, and an **automated benchmarking framework**, grounded in and aligned with the OWASP Top 10 for LLMs.
 
 This repository hosts the artifacts used to systematically generate, execute, and evaluate adversarial prompts targeting real-world LLM-based systems.
