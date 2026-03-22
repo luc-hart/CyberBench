@@ -83,6 +83,42 @@ All experiments reported in the accompanying thesis were conducted using this fr
 
 ---
 
+### Docker Setup
+
+1. **Clone the repository**
+
+```bash
+git clone https://github.com/luc-hart/CyberBench.git
+cd "CyberBench Automated Benchmarking Framework"
+```
+
+2. **Populate environment variables**  
+
+Edit the existing `.env` file in the project root and add your API keys (either OPENAI or DEEPSEEK. DEEPSEEK is used by default.) if you want to use the smart generator or LLM evaluator:
+
+```env
+DEESEEK_API_KEY=<your_deepseek_api_key>
+OPENAI_API_KEY=<your_openai_api_key>
+```
+
+3. **Start the framework and database**
+
+```bash
+docker compose up --build
+```
+
+This will:
+
+- Set up a PostgreSQL database and populate it with the CyberBench dataset  
+- Build the framework source code into a container  
+- Run the Flask web UI to orchestrate the framework
+
+4. **Access the web UI**
+
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your browser.
+
+---
+
 ## Artifact Availability
 
 The CyberBench Taxonomy, Dataset, and Automated Benchmarking Framework will be made publicly available upon acceptance of the associated thesis.  
