@@ -139,8 +139,3 @@ If you use CyberBench in academic work, please cite the corresponding thesis:
 }
 ```
 
----
-
-## License
-
-License information will be added upon public release.
